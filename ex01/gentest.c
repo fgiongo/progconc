@@ -2,7 +2,7 @@
 #include <stdlib.h>
 #include <time.h>
 
-#define MAX 100000
+#define MAX_DIM 100000
 
 typedef struct {
     int dim;
@@ -14,6 +14,7 @@ cmdl_args parse_cmdl_args( int argc, char * argv[] );
 double * vec_alloc( int n );
 double * vec_fill_rand( double * v, int n );
 double * vec_fill_zero( double * v, int n );
+void clear_file( char * path );
 void vec_print( double * v, int n );
 void vec_append_to_file( double * v, int n, char * path );
 double vec_inner_product( double * u, double * v, int n );
@@ -27,6 +28,7 @@ int main( int argc, char * argv[] ) {
     srand( time( NULL ) );
     vec_fill_rand( vec1, args.dim );
     vec_fill_rand( vec2, args.dim );
+    clear_file( args.filepath );
     vec_append_to_file( vec1, args.dim, args.filepath );
     vec_append_to_file( vec2, args.dim, args.filepath );
     vec_append_inner_product_to_file( vec1, vec2, args.dim, args.filepath );
@@ -44,6 +46,9 @@ cmdl_args parse_cmdl_args( int argc, char * argv[] ) {
     if ( n <= 0 ) {
         fprintf( stderr, "Uso: %s <dimensão> <arquivo de saída>\n", argv[ 0 ] );
         exit( 1 );
+    }
+    if ( n > MAX_DIM ) {
+        n = MAX_DIM;
     }
     args.dim = n;
     args.filepath = argv[ 2 ];
@@ -72,6 +77,13 @@ double * vec_fill_rand( double * v, int n ) {
     }
     return v;
 }
+
+
+void clear_file( char * path ) {
+    FILE * fp = fopen( path, "w" );
+    fclose(fp);
+}
+
 
 void vec_print( double * v, int n ) {
     for ( int i = 0; i < n; ++i ) {
@@ -102,11 +114,9 @@ void vec_append_to_file( double * v, int n, char * path ) {
 
 
 double vec_inner_product( double * u, double * v, int n ) {
-    double * ip = vec_alloc( n );
-    vec_fill_zero( ip, n ); 
-    int sum = 0;
+    double sum = 0;
     for ( int i = 0; i < n; ++i ) {
-        sum = u[ i ] + v[ i ];
+        sum += u[ i ] * v[ i ];
     }
     return sum;
 }
