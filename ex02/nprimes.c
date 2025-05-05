@@ -5,6 +5,8 @@
 #include <pthread.h>
 
 #define N_SAMPLES (100)
+#define TG_SIZE (2)
+#define TC_SIZE (3)
 
 typedef struct {
     int t_index;
@@ -26,10 +28,10 @@ sample new_sample( long long int target, int n_threads );
 sample benchmark( long long int target, int n_threads );
 
 int main( void ){
-    long long int targets[2] = { 1e3, 1e6 };
-    int thread_counts[3] = { 1, 2, 4 };
-    sample results[3];
-    for ( int tg_i = 0; tg_i < 2; ++tg_i ){
+    const long long int targets[ TG_SIZE ] = { 1e3, 1e6 };
+    const int thread_counts[ TC_SIZE ] = { 1, 2, 4 };
+    sample results[ TC_SIZE ];
+    for ( int tg_i = 0; tg_i < TG_SIZE; ++tg_i ){
         char time_filename[ 32 ];
         char speedup_filename[ 32 ];
         char efficiency_filename[ 32 ];
@@ -44,7 +46,7 @@ int main( void ){
             fprintf( stderr, "Error opening file\n" );
             exit( 1 );
         }
-        for ( int tc_i = 0; tc_i < 3; ++tc_i ){
+        for ( int tc_i = 0; tc_i < TC_SIZE; ++tc_i ){
             results[ tc_i ] = benchmark( targets[ tg_i ], thread_counts[ tc_i ] );
             double speedup = results[ 0 ].time / results[ tc_i ].time;
             double efficiency = speedup / thread_counts[ tc_i ];
