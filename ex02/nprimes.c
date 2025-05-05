@@ -1,11 +1,10 @@
 #include <stdio.h>
 #include <stdlib.h>
-#include <pthread.h>
 #include <math.h>
+#include <time.h>
+#include <pthread.h>
 
-int is_prime( int n );
-int number_of_primes( long long int a, long long int b );
-void * prime_counter( void * t_arg );
+#define N_SAMPLES (100)
 
 typedef struct {
     int t_index;
@@ -15,38 +14,83 @@ typedef struct {
     int * result;
 } thread_arg;
 
-int main( int argc, char * argv[] ){
-    if ( argc != 3 ){
-        printf( "Usage: %s [number] [number of threads]\n", argv[ 0 ] );
-        exit( 1 );
+typedef struct {
+    int n_primes;
+    double time;
+} sample;
+
+int is_prime( int n );
+int number_of_primes( long long int a, long long int b );
+void * prime_counter( void * t_arg );
+sample new_sample( long long int target, int n_threads );
+sample benchmark( long long int target, int n_threads );
+
+int main( void ){
+    long long int targets[2] = { 1e3, 1e6 };
+    int thread_counts[3] = { 1, 2, 4 };
+    sample results[3];
+    for ( int tg_i = 0; tg_i < 2; ++tg_i ){
+        char time_filename[ 32 ];
+        char speedup_filename[ 32 ];
+        char efficiency_filename[ 32 ];
+        sprintf( time_filename, "time-%lld.csv", targets[ tg_i ] );
+        sprintf( speedup_filename, "speedup-%lld.csv", targets[ tg_i ] );
+        sprintf( efficiency_filename, "efficiency-%lld.csv", targets[ tg_i ] );
+        FILE * time_fp = fopen( time_filename, "w" );
+        FILE * speedup_fp = fopen( speedup_filename, "w" );
+        FILE * efficiency_fp = fopen( efficiency_filename, "w" );
+        if ( time_fp == NULL || speedup_fp == NULL ||
+                efficiency_fp == NULL ){
+            fprintf( stderr, "Error opening file\n" );
+            exit( 1 );
+        }
+        for ( int tc_i = 0; tc_i < 3; ++tc_i ){
+            results[ tc_i ] = benchmark( targets[ tg_i ], thread_counts[ tc_i ] );
+            double speedup = results[ 0 ].time / results[ tc_i ].time;
+            double efficiency = speedup / thread_counts[ tc_i ];
+            fprintf( time_fp, "%lf, %lf\n",
+                    ( double )thread_counts[ tc_i ], results[ tc_i ].time );
+            fprintf( speedup_fp, "%lf, %lf\n",
+                    ( double )thread_counts[ tc_i ], speedup );
+            fprintf( efficiency_fp, "%lf, %lf\n",
+                    ( double )thread_counts[ tc_i ], efficiency );
+        }
+        fclose( time_fp );
+        fclose( speedup_fp );
+        fclose( efficiency_fp );
     }
-    long long int target = atoll( argv[ 1 ] );
-    if ( target <= 0 ){
-        printf( "Could not parse %s as positive integer\n", argv[ 1 ] );
-        exit( 1 );
+    return 0;
+}
+
+sample benchmark( long long int target, int n_threads ){
+    sample s;
+    double time = 0;
+    for ( int i = 0; i < N_SAMPLES; ++i ){
+        s = new_sample( target, n_threads );
+        time += s.time;
     }
-    int n_threads = atoi( argv[ 2 ]);
-    if ( target <= 0 ){
-        printf( "Could not parse %s as positive integer\n", argv[ 2 ] );
-        exit( 1 );
-    }
-    int n_primes_seq = number_of_primes( 0, target + 1 );
+    double avg = time / N_SAMPLES;
+    return ( sample ){ s.n_primes, avg };
+}
+
+sample new_sample( long long int target, int n_threads ){
+    struct timespec begin, end;
+    clock_gettime( CLOCK_MONOTONIC, &begin );
     pthread_t * tid = malloc( sizeof( pthread_t ) * n_threads );
     thread_arg * args = malloc( sizeof( thread_arg ) * n_threads );
     if ( tid == NULL || args == NULL ){
         fprintf( stderr, "Memory allocation error\n" );
         exit( 1 );
     }
-    pthread_mutex_t mutex;  
+    pthread_mutex_t mutex;
     pthread_mutex_init( &mutex, NULL );
-    int n_primes_conc = 0;
+    int n_primes = 0;
     for ( int i = 0; i < n_threads; ++i ){
-        fprintf( stderr, "Creating thread #%d\n", i + 1 );
         args[ i ].t_index = i;
         args[ i ].target = target;
         args[ i ].n_threads = n_threads;
         args[ i ].mutex = &mutex;
-        args[ i ].result = &n_primes_conc;
+        args[ i ].result = &n_primes;
         int err = pthread_create( &tid[ i ], NULL, prime_counter, ( void * )&args[ i ] );
         if ( err != 0 ){
             fprintf( stderr, "Thread creation error\n" );
@@ -54,14 +98,15 @@ int main( int argc, char * argv[] ){
         }
     }
     for ( int i = 0; i < n_threads; ++i ){
-        fprintf( stderr, "Waiting for worker thread #%d...\n", i + 1 );
         pthread_join( tid[ i ], NULL );
-        fprintf( stderr, "Worker thread #%d has finished...\n", i + 1 );
     }
     pthread_mutex_destroy( &mutex );
-    printf( "Sequential prime count: %d\nConcurrent prime count: %d\n",
-            n_primes_seq, n_primes_conc );
-    return 0;
+    free( tid );
+    free( args );
+    clock_gettime( CLOCK_MONOTONIC, &end );
+    double time = ( end.tv_sec - begin.tv_sec ) * 1000.0 +
+        ( end.tv_nsec - begin.tv_nsec ) / 1e6;
+    return ( sample ){ n_primes, time };
 }
 
 void * prime_counter( void * t_arg ){
@@ -73,8 +118,6 @@ void * prime_counter( void * t_arg ){
         last = arg->target + 1 ;
     }
     int count = number_of_primes( first, last );
-    fprintf( stderr, "Worker thread #%d of %d: counting primes in interval [ %lld, %lld ), interval size %lld, found %d primes\n",
-            arg->t_index + 1, arg->n_threads, first, last, size, count );
     pthread_mutex_lock( arg->mutex );
     * (arg->result) += count;
     pthread_mutex_unlock( arg->mutex );
